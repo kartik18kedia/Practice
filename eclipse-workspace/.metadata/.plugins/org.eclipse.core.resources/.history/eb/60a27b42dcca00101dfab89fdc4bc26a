@@ -1,0 +1,152 @@
+import org.apache.poi.xssf.usermodel.*;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+
+import java.io.FileOutputStream;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.stream.Collectors;
+
+public class MakeMyTripEndToEnd {
+
+    public static void main(String[] args) throws Exception {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--start-maximized");
+        WebDriver driver = new ChromeDriver(options);
+        driver.manage().timeouts().implicitlyWait(java.time.Duration.ofSeconds(15));
+
+        // 1. Launch
+        driver.get("https://www.makemytrip.com");
+
+        // 2. Close popup
+        try {
+            driver.findElement(By.xpath("//*[@id=\"SW\"]/div[1]/div[2]/div[2]/div/section/span")).click();
+        } catch (Exception e) { }
+
+        // 3. Select round trip
+        try {
+            WebElement coachmark = driver.findElement(By.cssSelector("span.coachmark"));
+            ((JavascriptExecutor) driver).executeScript("arguments[0].style.display='none';", coachmark);
+        } catch (Exception e) { }
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();",
+                driver.findElement(By.xpath("//li[@data-cy='roundTrip']")));
+
+        // 4. Select from city Mumbai
+        driver.findElement(By.id("fromCity")).click();
+        WebElement fromInput = driver.findElement(By.xpath("//input[@placeholder='From']"));
+        fromInput.sendKeys("Mumbai");
+        Thread.sleep(2000);
+        List<String> sourceCities = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"))
+                .stream().map(WebElement::getText).collect(Collectors.toList());
+
+        // 5. Select destination New Delhi
+        driver.findElement(By.id("toCity")).click();
+        WebElement toInput = driver.findElement(By.xpath("//input[@placeholder='To']"));
+        toInput.sendKeys("New Delhi");
+        Thread.sleep(2000);
+        List<String> destinationCities = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"))
+                .stream().map(WebElement::getText).collect(Collectors.toList());
+
+        // Write both lists to Excel
+        XSSFWorkbook wb = new XSSFWorkbook();
+        XSSFSheet srcSheet = wb.createSheet("Source Cities");
+        XSSFSheet destSheet = wb.createSheet("Destination Cities");
+
+        int r = 0;
+        for (String text : sourceCities) {
+            XSSFRow row = srcSheet.createRow(r++);
+            String[] parts = text.split("–");
+            for (int i = 0; i < parts.length; i++) row.createCell(i).setCellValue(parts[i].trim());
+        }
+        r = 0;
+        for (String text : destinationCities) {
+            XSSFRow row = destSheet.createRow(r++);
+            String[] parts = text.split("–");
+            for (int i = 0; i < parts.length; i++) row.createCell(i).setCellValue(parts[i].trim());
+        }
+        FileOutputStream out = new FileOutputStream("C:\\Users\\KARTIK\\Documents\\MakeMyTripCities.xlsx");
+        wb.write(out); out.close(); wb.close();
+
+        // 6. Departure 26-11-2025, Return 17-12-2025
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMM yyyy");
+        driver.findElement(By.xpath("//label[@for='departure']")).click();
+        driver.findElement(By.xpath("//div[@aria-label='" + fmt.format(LocalDate.of(2025,11,26)) + "']")).click();
+        driver.findElement(By.xpath("//label[@for='return']")).click();
+        driver.findElement(By.xpath("//div[@aria-label='" + fmt.format(LocalDate.of(2025,12,17)) + "']")).click();
+
+        // 7. Passenger type Regular (default, skip)
+
+        // 8. Traveller and class Economy, 1 traveller
+        driver.findElement(By.id("travellerAndClass")).click();
+        driver.findElement(By.xpath("//li[@data-cy='adults-1']")).click();
+        driver.findElement(By.xpath("//li[@data-cy='travelClass-0']")).click();
+        driver.findElement(By.xpath("//button[text()='APPLY']")).click();
+
+        // 9. Search flights
+        driver.findElement(By.xpath("//a[text()='Search']")).click();
+        Thread.sleep(8000);
+
+        // 10. Page load time
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+        long loadTime = (Long) js.executeScript(
+                "return window.performance.timing.loadEventEnd - window.performance.timing.navigationStart;");
+        System.out.println("Page Load Time: " + loadTime + " ms");
+
+        // 11. List Air India & Indigo flights
+        List<WebElement> flights = driver.findElements(By.cssSelector(".listingCard"));
+        System.out.println("Table 1: Flight Number + Price");
+        for (WebElement f : flights) {
+            String airline = f.getText().toLowerCase();
+            if (airline.contains("air india") || airline.contains("indigo")) {
+                String flightNum = f.findElement(By.cssSelector(".flightNumber")).getText();
+                String price = f.findElement(By.cssSelector(".priceSection .price")).getText();
+                System.out.println(flightNum + " | " + price);
+            }
+        }
+        System.out.println("\nTable 2: Departure, Arrival, Duration");
+        for (WebElement f : flights) {
+            String airline = f.getText().toLowerCase();
+            if (airline.contains("air india") || airline.contains("indigo")) {
+                String dep = f.findElement(By.cssSelector(".dept-time")).getText();
+                String arr = f.findElement(By.cssSelector(".reaching-time")).getText();
+                String dur = f.findElement(By.cssSelector(".stop-info")).getText();
+                System.out.println(dep + " | " + arr + " | " + dur);
+            }
+        }
+
+        // 12. Select cheapest Air India/Indigo flight onward
+        WebElement cheapest = flights.stream()
+                .filter(f -> f.getText().toLowerCase().contains("air india") || f.getText().toLowerCase().contains("indigo"))
+                .min((a,b) -> {
+                    int pa = Integer.parseInt(a.findElement(By.cssSelector(".priceSection .price")).getText().replaceAll("[^0-9]",""));
+                    int pb = Integer.parseInt(b.findElement(By.cssSelector(".priceSection .price")).getText().replaceAll("[^0-9]",""));
+                    return Integer.compare(pa,pb);
+                }).orElse(null);
+        if (cheapest != null) {
+            cheapest.findElement(By.xpath(".//button[contains(text(),'Book')]")).click();
+        }
+
+        // 13. Book tickets (continue)
+        try { driver.findElement(By.xpath("//button[contains(text(),'Continue')]")).click(); } catch (Exception e) {}
+
+        // 14. Select Xpress Flex plan
+        try { driver.findElement(By.xpath("//*[contains(text(),'Xpress Flex')]//button")).click(); } catch (Exception e) {}
+
+        // 15. Handle price increase popup
+        try {
+            WebElement popup = driver.findElement(By.xpath("//*[contains(text(),'price') and contains(text(),'increase')]"));
+            String amount = popup.getText().replaceAll("[^0-9]","");
+            System.out.println("Price increased by: ₹" + amount);
+            popup.findElement(By.xpath(".//button[contains(text(),'Continue')]")).click();
+        } catch (Exception e) { }
+
+        // 16. Final page load time
+        long finalLoad = (Long) js.executeScript(
+                "return window.performance.timing.loadEventEnd - window.performance.timing.navigationStart;");
+        System.out.println("Final Page Load Time: " + finalLoad + " ms");
+
+        driver.quit();
+    }
+}

@@ -1,0 +1,8 @@
+package kk;
+
+public class kk2 {
+	
+	public void a1() {
+		System.out.println("a1");
+	}
+}

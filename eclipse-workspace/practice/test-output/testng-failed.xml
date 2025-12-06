@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Failed suite [Regression and Smoke]" guice-stage="DEVELOPMENT">
+  <test thread-count="5" name="Test(failed)">
+    <classes>
+      <class name="practice.testing">
+        <methods>
+          <include name="practicetest5"/>
+          <include name="practicetest4"/>
+          <include name="practicetest3"/>
+        </methods>
+      </class> <!-- practice.testing -->
+    </classes>
+  </test> <!-- Test(failed) -->
+</suite> <!-- Failed suite [Regression and Smoke] -->

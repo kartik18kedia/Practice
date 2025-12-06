@@ -1,0 +1,81 @@
+import org.apache.poi.xssf.usermodel.*;
+import java.io.FileOutputStream;
+import java.util.Arrays;
+import java.util.List;
+
+public class SampleExcelExport {
+    public static void main(String[] args) throws Exception {
+        // Sample data
+        List<String[]> sourceCities = Arrays.asList(
+                new String[]{"BOM", "Mumbai", "Chhatrapati Shivaji Maharaj International Airport"},
+                new String[]{"DEL", "Delhi", "Indira Gandhi International Airport"}
+        );
+
+        List<String[]> destinationCities = Arrays.asList(
+                new String[]{"GOI", "Goa", "Goa International Airport"},
+                new String[]{"MAA", "Chennai", "Chennai International Airport"}
+        );
+
+        List<String[]> flightTable1 = Arrays.asList(
+                new String[]{"Air India", "AI101", "5200"},
+                new String[]{"IndiGo", "6E203", "4850"}
+        );
+
+        List<String[]> flightTable2 = Arrays.asList(
+                new String[]{"Air India", "06:00", "08:15", "2h 15m"},
+                new String[]{"IndiGo", "07:30", "09:45", "2h 15m"}
+        );
+
+        // Create workbook
+        XSSFWorkbook wb = new XSSFWorkbook();
+
+        // Sheet 1: Source Cities
+        XSSFSheet srcSheet = wb.createSheet("Source Cities");
+        int rowNum = 0;
+        for (String[] rowData : sourceCities) {
+            XSSFRow row = srcSheet.createRow(rowNum++);
+            for (int i = 0; i < rowData.length; i++) {
+                row.createCell(i).setCellValue(rowData[i]);
+            }
+        }
+
+        // Sheet 2: Destination Cities
+        XSSFSheet destSheet = wb.createSheet("Destination Cities");
+        rowNum = 0;
+        for (String[] rowData : destinationCities) {
+            XSSFRow row = destSheet.createRow(rowNum++);
+            for (int i = 0; i < rowData.length; i++) {
+                row.createCell(i).setCellValue(rowData[i]);
+            }
+        }
+
+        // Sheet 3: Filtered Flights
+        XSSFSheet flightSheet = wb.createSheet("Filtered Flights");
+        // Table 1
+        rowNum = 0;
+        flightSheet.createRow(rowNum++).createCell(0).setCellValue("Table 1: Flight Number & Price");
+        for (String[] rowData : flightTable1) {
+            XSSFRow row = flightSheet.createRow(rowNum++);
+            for (int i = 0; i < rowData.length; i++) {
+                row.createCell(i).setCellValue(rowData[i]);
+            }
+        }
+        // Table 2
+        rowNum++;
+        flightSheet.createRow(rowNum++).createCell(0).setCellValue("Table 2: Departure, Arrival, Duration");
+        for (String[] rowData : flightTable2) {
+            XSSFRow row = flightSheet.createRow(rowNum++);
+            for (int i = 0; i < rowData.length; i++) {
+                row.createCell(i).setCellValue(rowData[i]);
+            }
+        }
+
+        // Save file
+        FileOutputStream out = new FileOutputStream("C:\\Users\\KARTIK\\Documents\\MakeMyTripCities.xlsx");
+        wb.write(out);
+        out.close();
+        wb.close();
+
+        System.out.println("Excel file created at: C:\\Users\\KARTIK\\Documents\\MakeMyTripCities.xlsx");
+    }
+}

@@ -1,0 +1,85 @@
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+
+import java.io.FileOutputStream;
+import java.time.Duration;
+import java.util.List;
+
+public class MakeMyTripCapstone {
+
+    public static void main(String[] args) throws Exception {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--start-maximized");
+        WebDriver driver = new ChromeDriver(options);
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(20));
+
+        driver.get("https://www.makemytrip.com");
+
+        // Close popup
+        try {
+            driver.findElement(By.xpath("//*[@id=\"SW\"]/div[1]/div[2]/div[2]/div/section/span")).click();
+        } catch (Exception e) {
+            System.out.println("Popup not found.");
+        }
+
+
+        // Click Round Trip using JS to avoid interception
+        WebElement roundTrip = driver.findElement(By.xpath("//li[@data-cy='roundTrip']"));
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", roundTrip);
+
+        // Select From City: New Delhi
+        driver.findElement(By.id("fromCity")).click();
+        WebElement fromInput = driver.findElement(By.xpath("//input[@placeholder='From']"));
+        fromInput.sendKeys("New Delhi");
+        Thread.sleep(2000);
+        List<WebElement> sourceCities = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"));
+
+        // Select To City: Mumbai
+        driver.findElement(By.id("toCity")).click();
+        WebElement toInput = driver.findElement(By.xpath("//input[@placeholder='To']"));
+        toInput.sendKeys("Mumbai");
+        Thread.sleep(2000);
+        List<WebElement> destinationCities = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"));
+
+        // Write to Excel using XSSF only
+        XSSFWorkbook workbook = new XSSFWorkbook();
+        XSSFSheet sourceSheet = workbook.createSheet("Source Cities");
+        XSSFSheet destinationSheet = workbook.createSheet("Destination Cities");
+
+        writeCityListToSheet(sourceCities, sourceSheet);
+        writeCityListToSheet(destinationCities, destinationSheet);
+
+        FileOutputStream out = new FileOutputStream("MakeMyTripCities.xlsx");
+        workbook.write(out);
+        out.close();
+        workbook.close();
+        System.out.println("Excel file created.");
+
+        // Navigation Timing API
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+        long loadTime = (Long) js.executeScript(
+            "return window.performance.timing.loadEventEnd - window.performance.timing.navigationStart;");
+        System.out.println("Page Load Time: " + loadTime + " ms");
+
+        driver.quit();
+    }
+
+    private static void writeCityListToSheet(List<WebElement> cities, XSSFSheet sheet) {
+        int rowNum = 0;
+        for (WebElement city : cities) {
+            XSSFRow row = sheet.createRow(rowNum++);
+            String[] parts = city.getText().split("–");
+            for (int i = 0; i < parts.length; i++) {
+                XSSFCell cell = row.createCell(i);
+                cell.setCellValue(parts[i].trim());
+            }
+        }
+    }
+}

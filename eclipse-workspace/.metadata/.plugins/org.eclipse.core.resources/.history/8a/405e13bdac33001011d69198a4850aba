@@ -1,0 +1,21 @@
+package kk;
+
+public class kkr {
+
+	
+	public void method1() {
+		System.out.println("method1 1");
+		
+	}
+	
+	public static void method1(String k) {
+		System.out.println("method1 1");
+		
+	}
+	public static void main(String[] args) {
+		
+     method1("kartik");
+     kk2.a1();
+	}
+
+}

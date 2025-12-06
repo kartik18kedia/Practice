@@ -1,0 +1,46 @@
+import org.openqa.selenium.*;
+import java.util.List;
+
+public class FlightResultsPage {
+    private WebDriver driver;
+
+    public FlightResultsPage(WebDriver driver) {
+        this.driver = driver;
+    }
+
+    public List<WebElement> getFlights() {
+        return driver.findElements(By.cssSelector(".listingCard"));
+    }
+
+    public void printAirIndiaIndigoFlights(List<WebElement> flights) {
+        System.out.println("Table 1: Flight Number + Price");
+        for (WebElement f : flights) {
+            String airline = f.getText().toLowerCase();
+            if (airline.contains("air india") || airline.contains("indigo")) {
+                String flightNum = f.findElement(By.cssSelector(".flightNumber")).getText();
+                String price = f.findElement(By.cssSelector(".priceSection .price")).getText();
+                System.out.println(flightNum + " | " + price);
+            }
+        }
+        System.out.println("\nTable 2: Departure, Arrival, Duration");
+        for (WebElement f : flights) {
+            String airline = f.getText().toLowerCase();
+            if (airline.contains("air india") || airline.contains("indigo")) {
+                String dep = f.findElement(By.cssSelector(".dept-time")).getText();
+                String arr = f.findElement(By.cssSelector(".reaching-time")).getText();
+                String dur = f.findElement(By.cssSelector(".stop-info")).getText();
+                System.out.println(dep + " | " + arr + " | " + dur);
+            }
+        }
+    }
+
+    public WebElement selectCheapest(List<WebElement> flights) {
+        return flights.stream()
+                .filter(f -> f.getText().toLowerCase().contains("air india") || f.getText().toLowerCase().contains("indigo"))
+                .min((a,b) -> {
+                    int pa = Integer.parseInt(a.findElement(By.cssSelector(".priceSection .price")).getText().replaceAll("[^0-9]",""));
+                    int pb = Integer.parseInt(b.findElement(By.cssSelector(".priceSection .price")).getText().replaceAll("[^0-9]",""));
+                    return Integer.compare(pa,pb);
+                }).orElse(null);
+    }
+}

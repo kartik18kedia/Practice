@@ -1,0 +1,102 @@
+package rahulshettyacademy;
+import java.net.URL;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.remote.DesiredCapabilities;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+
+import io.appium.java_client.*;
+import io.appium.java_client.android.AndroidDriver;
+import io.appium.java_client.remote.MobileCapabilityType;
+
+public class MakeMyTripMobileTest {
+
+    AndroidDriver<MobileElement> driver;
+
+    @BeforeClass
+    public void setup() throws Exception {
+        DesiredCapabilities caps = new DesiredCapabilities();
+        caps.setCapability(MobileCapabilityType.PLATFORM_NAME, "Android");
+        caps.setCapability(MobileCapabilityType.DEVICE_NAME, "Android Emulator");
+        caps.setCapability(MobileCapabilityType.BROWSER_NAME, "Chrome");
+
+        driver = new AndroidDriver<>(new URL("http://localhost:4723/wd/hub"), caps);
+        driver.manage().timeouts().implicitlyWait(20, TimeUnit.SECONDS);
+    }
+
+    @Test
+    public void testMakeMyTripFlow() throws InterruptedException {
+        driver.get("https://www.makemytrip.com");
+
+        // Close sign-in popup
+        try {
+            WebElement closePopup = driver.findElement(By.cssSelector(".loginModal.displayBlock .close"));
+            closePopup.click();
+        } catch (Exception e) {
+            System.out.println("Popup not found or already closed.");
+        }
+
+        // Select Round Trip
+        driver.findElement(By.xpath("//li[@data-cy='roundTrip']")).click();
+
+        // Select From City
+        WebElement fromCity = driver.findElement(By.id("fromCity"));
+        fromCity.click();
+        WebElement fromInput = driver.findElement(By.xpath("//input[@placeholder='From']"));
+        fromInput.sendKeys("Pune");
+
+        // Select Destination City
+        WebElement toCity = driver.findElement(By.id("toCity"));
+        toCity.click();
+        WebElement toInput = driver.findElement(By.xpath("//input[@placeholder='To']"));
+        toInput.sendKeys("New Delhi");
+
+        // Capture city list (simplified for demo)
+        List<MobileElement> cityList = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"));
+        System.out.println("City List:");
+        for (MobileElement city : cityList) {
+            System.out.println(city.getText());
+        }
+
+        // Select dates one month ahead
+        LocalDate departureDate = LocalDate.now().plusMonths(1).withDayOfMonth(5);
+        LocalDate returnDate = LocalDate.now().plusMonths(1).withDayOfMonth(10);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
+
+        driver.findElement(By.xpath("//label[@for='departure']")).click();
+        driver.findElement(By.xpath("//div[@aria-label='" + formatter.format(departureDate) + "']")).click();
+        driver.findElement(By.xpath("//label[@for='return']")).click();
+        driver.findElement(By.xpath("//div[@aria-label='" + formatter.format(returnDate) + "']")).click();
+
+        // Select Traveller & Class
+        driver.findElement(By.id("travellerAndClass")).click();
+        driver.findElement(By.xpath("//li[@data-cy='adults-1']")).click();
+        driver.findElement(By.xpath("//li[@data-cy='travelClass-0']")).click(); // Economy
+        driver.findElement(By.xpath("//button[text()='APPLY']")).click();
+
+        // Search Flights
+        driver.findElement(By.xpath("//a[text()='Search']")).click();
+        Thread.sleep(5000); // Wait for results
+
+        // Print Top 5 Flights
+        List<MobileElement> flights = driver.findElements(By.cssSelector(".listingCard"));
+        System.out.println("Top 5 Flights:");
+        for (int i = 0; i < Math.min(5, flights.size()); i++) {
+            System.out.println(flights.get(i).getText());
+        }
+    }
+
+    @AfterClass
+    public void tearDown() {
+        if (driver != null) {
+            driver.quit();
+        }
+    }
+}

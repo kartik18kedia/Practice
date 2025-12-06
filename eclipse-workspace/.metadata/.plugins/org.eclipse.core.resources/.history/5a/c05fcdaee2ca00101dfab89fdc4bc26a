@@ -1,0 +1,5 @@
+package MakemyTrip.pageobjects;
+
+public class BookingPage {
+
+}

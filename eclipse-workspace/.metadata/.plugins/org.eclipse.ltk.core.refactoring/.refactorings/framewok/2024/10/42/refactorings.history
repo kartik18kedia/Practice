@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;framewok/src/test/java/framework/testdata/purchaseorder,json&apos; to &apos;purchaseorder.json&apos;" description="Rename resource &apos;purchaseorder,json&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="src/test/java/framework/testdata/purchaseorder,json" name="purchaseorder.json" stamp="1729072027092" updateReferences="true"/>
+</session>

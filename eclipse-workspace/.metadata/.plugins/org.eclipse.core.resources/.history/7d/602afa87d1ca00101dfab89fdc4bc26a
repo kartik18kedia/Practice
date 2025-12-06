@@ -1,0 +1,121 @@
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.remote.DesiredCapabilities;
+import org.openqa.selenium.remote.RemoteWebDriver;
+import org.testng.annotations.*;
+
+import java.io.FileOutputStream;
+import java.net.URL;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+public class MakeMyTripMobileTest {
+
+    WebDriver driver;
+    Workbook workbook = new XSSFWorkbook();
+    Sheet sourceSheet = workbook.createSheet("Source Cities");
+    Sheet destinationSheet = workbook.createSheet("Destination Cities");
+
+    @BeforeClass
+    public void setup() throws Exception {
+        DesiredCapabilities caps = new DesiredCapabilities();
+        caps.setCapability("platformName", "Android");
+        caps.setCapability("deviceName", "Android Emulator");
+        caps.setCapability("browserName", "Chrome");
+
+        driver = new RemoteWebDriver(new URL("http://localhost:4723/wd/hub"), caps);
+        driver.manage().timeouts().implicitlyWait(20, TimeUnit.SECONDS);
+    }
+
+    @Test
+    public void testMakeMyTripFlow() throws Exception {
+        driver.get("https://www.makemytrip.com");
+
+        // Close sign-in popup
+        try {
+            WebElement closePopup = driver.findElement(By.cssSelector(".loginModal.displayBlock .close"));
+            closePopup.click();
+        } catch (Exception e) {
+            System.out.println("Popup not found or already closed.");
+        }
+
+        // Select Round Trip
+        driver.findElement(By.xpath("//li[@data-cy='roundTrip']")).click();
+
+        // Select From City
+        WebElement fromCity = driver.findElement(By.id("fromCity"));
+        fromCity.click();
+        WebElement fromInput = driver.findElement(By.xpath("//input[@placeholder='From']"));
+        fromInput.sendKeys("Pune");
+
+        Thread.sleep(2000); // Wait for suggestions
+        List<WebElement> sourceCities = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"));
+        writeCitiesToSheet(sourceCities, sourceSheet);
+
+        // Select Destination City
+        WebElement toCity = driver.findElement(By.id("toCity"));
+        toCity.click();
+        WebElement toInput = driver.findElement(By.xpath("//input[@placeholder='To']"));
+        toInput.sendKeys("New Delhi");
+
+        Thread.sleep(2000); // Wait for suggestions
+        List<WebElement> destinationCities = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"));
+        writeCitiesToSheet(destinationCities, destinationSheet);
+
+        // Save Excel
+        FileOutputStream fileOut = new FileOutputStream("CityList.xlsx");
+        workbook.write(fileOut);
+        fileOut.close();
+        System.out.println("Excel file created: CityList.xlsx");
+
+        // Select dates one month ahead
+        LocalDate departureDate = LocalDate.now().plusMonths(1).withDayOfMonth(5);
+        LocalDate returnDate = LocalDate.now().plusMonths(1).withDayOfMonth(10);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
+
+        driver.findElement(By.xpath("//label[@for='departure']")).click();
+        driver.findElement(By.xpath("//div[@aria-label='" + formatter.format(departureDate) + "']")).click();
+        driver.findElement(By.xpath("//label[@for='return']")).click();
+        driver.findElement(By.xpath("//div[@aria-label='" + formatter.format(returnDate) + "']")).click();
+
+        // Select Traveller & Class
+        driver.findElement(By.id("travellerAndClass")).click();
+        driver.findElement(By.xpath("//li[@data-cy='adults-1']")).click();
+        driver.findElement(By.xpath("//li[@data-cy='travelClass-0']")).click(); // Economy
+        driver.findElement(By.xpath("//button[text()='APPLY']")).click();
+
+        // Search Flights
+        driver.findElement(By.xpath("//a[text()='Search']")).click();
+        Thread.sleep(5000); // Wait for results
+
+        // Print Top 5 Flights
+        List<WebElement> flights = driver.findElements(By.cssSelector(".listingCard"));
+        System.out.println("Top 5 Flights:");
+        for (int i = 0; i < Math.min(5, flights.size()); i++) {
+            System.out.println(flights.get(i).getText());
+        }
+    }
+
+    private void writeCitiesToSheet(List<WebElement> cities, Sheet sheet) {
+        int rowNum = 0;
+        for (WebElement city : cities) {
+            Row row = sheet.createRow(rowNum++);
+            String[] parts = city.getText().split("–");
+            for (int i = 0; i < parts.length; i++) {
+                row.createCell(i).setCellValue(parts[i].trim());
+            }
+        }
+    }
+
+    @AfterClass
+    public void tearDown() {
+        if (driver != null) {
+            driver.quit();
+        }
+    }
+}

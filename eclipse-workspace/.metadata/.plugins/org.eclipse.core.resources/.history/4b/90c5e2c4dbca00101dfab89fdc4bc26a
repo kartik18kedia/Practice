@@ -1,0 +1,469 @@
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.io.FileOutputStream;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class MakeMyTripEndToEnd {
+
+    private static final String OUTPUT_PATH = "C:\\Users\\KARTIK\\Documents\\MakeMyTripCities.xlsx";
+    private static final DateTimeFormatter MMT_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
+
+    public static void main(String[] args) throws Exception {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--start-maximized");
+        WebDriver driver = new ChromeDriver(options);
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(5));
+
+        try {
+            // 1. Launch
+            driver.get("https://www.makemytrip.com");
+
+            // 2. Close sign up/sign in popup
+            closeLoginPopupIfPresent(driver);
+
+            // Hide coachmarks/overlays that block clicks
+            hideCoachmarks(driver);
+
+            // 3. Select round trip option
+            clickViaJS(driver, wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//li[@data-cy='roundTrip']"))));
+
+            // 4. Select from city as Mumbai and destination city as New Delhi
+            selectCity(driver, wait, "fromCity", "From", "Mumbai");
+            // Keep dropdown open and capture Source list (step 5 part A)
+            List<String> sourceCityTexts = captureSuggestionTexts(driver, wait);
+
+            selectCity(driver, wait, "toCity", "To", "New Delhi");
+            // Capture Destination list (step 5 part B)
+            List<String> destinationCityTexts = captureSuggestionTexts(driver, wait);
+
+            // Write Source/Destination lists to Excel (mapped City – Code – Airport)
+            writeCitiesToExcel(sourceCityTexts, destinationCityTexts);
+
+            // Confirm actual selections (choose explicit items containing target city names)
+            selectSuggestionByText(driver, wait, "Mumbai");
+            selectSuggestionByText(driver, wait, "New Delhi");
+
+            // 6. Select departure as 26-11-2025 and return as 17-12-2025
+            setDate(driver, wait, "departure", LocalDate.of(2025, 11, 26));
+            setDate(driver, wait, "return", LocalDate.of(2025, 12, 17));
+
+            // 7. Select passenger type as regular
+            // MMT defaults to Regular; if a dropdown appears, ensure Regular selected (defensive no-op)
+            selectPassengerTypeRegularIfPresent(driver);
+
+            // 8. Select traveller and class as Economy and 1 traveller
+            setTravellersAndClass(driver, wait, 1, "Economy");
+
+            // 9. Search for flights
+            WebElement searchBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[normalize-space()='Search']")));
+            clickViaJS(driver, searchBtn);
+
+            // 10. Capture page load time (after results load)
+            waitForResults(driver, wait);
+            long loadTimeMsSearch = getPageLoadTime(driver);
+            System.out.println("Search results page load time: " + loadTimeMsSearch + " ms");
+
+            // 11. List Air India and IndiGo flights with two tables: (a) flight number + price, (b) dep/arr/duration
+            List<FlightCard> allFlights = parseFlights(driver);
+            List<FlightCard> filtered = allFlights.stream()
+                    .filter(f -> f.airline.toLowerCase().contains("air india") || f.airline.toLowerCase().contains("indigo"))
+                    .collect(Collectors.toList());
+
+            printTables(filtered, "Onward (Delhi ↔ Mumbai)"); // Context label
+
+            // 12. Select cheapest Air India/IndiGo flight for onward
+            FlightCard cheapestOnward = filtered.stream().min(Comparator.comparingDouble(f -> f.price)).orElse(null);
+            if (cheapestOnward != null) {
+                System.out.println("Cheapest onward: " + cheapestOnward);
+                clickViaJS(driver, cheapestOnward.bookButton);
+            } else {
+                System.out.println("No Air India/IndiGo onward flights found.");
+            }
+
+            // Wait for return selection page or combined results
+            wait.until(driver1 -> driver1.getPageSource().toLowerCase().contains("return"));
+
+            // Parse return flights (page typically updates)
+            List<FlightCard> returnFlights = parseFlights(driver).stream()
+                    .filter(f -> f.airline.toLowerCase().contains("air india") || f.airline.toLowerCase().contains("indigo"))
+                    .collect(Collectors.toList());
+
+            printTables(returnFlights, "Return (Delhi ↔ Mumbai)");
+            FlightCard cheapestReturn = returnFlights.stream().min(Comparator.comparingDouble(f -> f.price)).orElse(null);
+            if (cheapestReturn != null) {
+                System.out.println("Cheapest return: " + cheapestReturn);
+                clickViaJS(driver, cheapestReturn.bookButton);
+            } else {
+                System.out.println("No Air India/IndiGo return flights found.");
+            }
+
+            // 13. Click on book tickets (MMT often has "Book Now"/"Continue" buttons per flight and a summary CTA)
+            proceedToBooking(driver, wait);
+
+            // 14. Select Xpress Flex plan for both onward and return journey
+            selectXpressFlexIfPresent(driver, wait);
+
+            // 15. Click on book flight and handle any price increase notification; capture increase amount
+            handlePriceIncreaseIfPresent(driver, wait);
+
+            // 16. Capture page load time using Navigation Timing API (final confirmation/booking page)
+            long loadTimeMsBooking = getPageLoadTime(driver);
+            System.out.println("Booking page load time: " + loadTimeMsBooking + " ms");
+
+        } finally {
+            driver.quit();
+        }
+    }
+
+    // ---------- Helpers ----------
+
+    private static void closeLoginPopupIfPresent(WebDriver driver) {
+        try {
+            WebElement closePopup = driver.findElement(By.xpath("//*[@id=\"SW\"]/div[1]/div[2]/div[2]/div/section/span"));
+            clickViaJS(driver, closePopup);
+            sleep(500);
+        } catch (Exception ignored) { }
+    }
+
+    private static void hideCoachmarks(WebDriver driver) {
+        try {
+            List<WebElement> marks = driver.findElements(By.cssSelector(".coachmark, span.coachmark"));
+            for (WebElement m : marks) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].style.display='none';", m);
+            }
+        } catch (Exception ignored) { }
+    }
+
+    private static void selectCity(WebDriver driver, WebDriverWait wait, String fieldId, String placeholder, String cityText) {
+        WebElement field = wait.until(ExpectedConditions.elementToBeClickable(By.id(fieldId)));
+        clickViaJS(driver, field);
+        WebElement input = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id=\'fromCity\']")));
+        input.clear();
+        input.sendKeys(cityText);
+        sleep(1200);
+    }
+
+    private static List<String> captureSuggestionTexts(WebDriver driver, WebDriverWait wait) {
+        List<WebElement> items = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
+                By.cssSelector(".react-autosuggest__suggestions-list li")));
+        // Capture text immediately to avoid stale references
+        return items.stream().map(WebElement::getText).filter(t -> t != null && !t.isBlank()).collect(Collectors.toList());
+    }
+
+    private static void selectSuggestionByText(WebDriver driver, WebDriverWait wait, String textContains) {
+        WebElement item = wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//li[contains(.,'" + textContains + "')]")));
+        clickViaJS(driver, item);
+    }
+
+    private static void setDate(WebDriver driver, WebDriverWait wait, String forAttr, LocalDate date) {
+        WebElement label = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//label[@for='" + forAttr + "']")));
+        clickViaJS(driver, label);
+        String ariaLabel = MMT_DATE_FMT.format(date);
+        // If not in current visible month, navigate months
+        boolean clicked = clickDateCell(driver, ariaLabel);
+        if (!clicked) {
+            // Try navigating months up to 12 times
+            for (int i = 0; i < 12; i++) {
+                clickNextMonthIfPresent(driver);
+                if (clickDateCell(driver, ariaLabel)) break;
+            }
+        }
+    }
+
+    private static boolean clickDateCell(WebDriver driver, String ariaLabel) {
+        try {
+            WebElement cell = driver.findElement(By.xpath("//div[@aria-label='" + ariaLabel + "']"));
+            clickViaJS(driver, cell);
+            sleep(300);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void clickNextMonthIfPresent(WebDriver driver) {
+        try {
+            WebElement next = driver.findElement(By.cssSelector(".DayPicker-NavButton--next, .dayPicker .next"));
+            clickViaJS(driver, next);
+            sleep(300);
+        } catch (Exception ignored) { }
+    }
+
+    private static void selectPassengerTypeRegularIfPresent(WebDriver driver) {
+        try {
+            // If a passenger type dropdown exists, ensure "Regular" is selected
+            WebElement regular = driver.findElement(By.xpath("//li[contains(.,'Regular')]"));
+            clickViaJS(driver, regular);
+            sleep(200);
+        } catch (Exception ignored) { }
+    }
+
+    private static void setTravellersAndClass(WebDriver driver, WebDriverWait wait, int adults, String cls) {
+        WebElement tc = wait.until(ExpectedConditions.elementToBeClickable(By.id("travellerAndClass")));
+        clickViaJS(driver, tc);
+        // Set adults count (assumes selector entries like data-cy='adults-1', 'adults-2', etc.)
+        WebElement adultsLi = wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//li[@data-cy='adults-" + adults + "']")));
+        clickViaJS(driver, adultsLi);
+        // Class: Economy=0, Premium Economy=1, Business=2 typically
+        int classIdx = cls.equalsIgnoreCase("Economy") ? 0 : cls.equalsIgnoreCase("Premium Economy") ? 1 : 2;
+        WebElement classLi = wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//li[@data-cy='travelClass-" + classIdx + "']")));
+        clickViaJS(driver, classLi);
+        WebElement applyBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[normalize-space()='APPLY']")));
+        clickViaJS(driver, applyBtn);
+    }
+
+    private static void waitForResults(WebDriver driver, WebDriverWait wait) {
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".listingCard, .resultList, .flightList")));
+        sleep(1000);
+    }
+
+    private static long getPageLoadTime(WebDriver driver) {
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+        try {
+            Long loadTime = (Long) js.executeScript("return window.performance.timing.loadEventEnd - window.performance.timing.navigationStart;");
+            return loadTime != null ? loadTime : -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private static List<FlightCard> parseFlights(WebDriver driver) {
+        List<FlightCard> out = new ArrayList<>();
+        List<WebElement> cards = driver.findElements(By.cssSelector(".listingCard"));
+        for (WebElement card : cards) {
+            try {
+                String airline = safeText(card, ".airlineName, .makeFlex .airlineInfo .airlineName, [data-testid='airline_name']");
+                String flightNum = safeText(card, ".flightNumber, [data-testid='flight_number']");
+                String dep = safeText(card, ".dept-time, [data-testid='departure_time']");
+                String arr = safeText(card, ".reaching-time, [data-testid='arrival_time']");
+                String dur = safeText(card, ".stop-info, .duration, [data-testid='duration']");
+                String priceTxt = safeText(card, ".priceSection .price, [data-testid='final_price']");
+                double price = parsePrice(priceTxt);
+
+                // Book button (varies)
+                WebElement bookBtn = findFirst(card,
+                        By.xpath(".//button[contains(.,'Book')]"),
+                        By.cssSelector("button[data-testid='book_button'], .bookButton button"));
+
+                out.add(new FlightCard(airline, flightNum, dep, arr, dur, price, bookBtn, card));
+            } catch (Exception ignored) { }
+        }
+        return out;
+    }
+
+    private static String safeText(WebElement root, String css) {
+        try {
+            WebElement el = root.findElement(By.cssSelector(css));
+            String t = el.getText();
+            if (t == null || t.isBlank()) {
+                // fallback to innerText
+                JavascriptExecutor js = (JavascriptExecutor) ((WrapsDriver) root).getWrappedDriver();
+                t = (String) js.executeScript("return arguments[0].innerText;", el);
+            }
+            return t.trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static WebElement findFirst(WebElement root, By... locators) {
+        for (By by : locators) {
+            try {
+                WebElement el = root.findElement(by);
+                if (el != null) return el;
+            } catch (Exception ignored) { }
+        }
+        return null;
+    }
+
+    private static double parsePrice(String priceTxt) {
+        if (priceTxt == null) return Double.NaN;
+        String digits = priceTxt.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) return Double.NaN;
+        try { return Double.parseDouble(digits); } catch (Exception e) { return Double.NaN; }
+    }
+
+    private static void printTables(List<FlightCard> flights, String label) {
+        System.out.println("\n=== " + label + " — Air India & IndiGo (Tables) ===");
+        // Table 1: Flight Number + Price
+        System.out.println("Table 1: Flight Number and Price");
+        for (FlightCard f : flights) {
+            System.out.println("Airline: " + f.airline + " | Flight: " + (f.flightNumber.isEmpty() ? "-" : f.flightNumber) + " | Price: " + (Double.isNaN(f.price) ? "-" : ("₹" + (long) f.price)));
+        }
+        // Table 2: Departure, Arrival, Duration
+        System.out.println("\nTable 2: Departure, Arrival, Duration");
+        for (FlightCard f : flights) {
+            System.out.println("Airline: " + f.airline + " | Dep: " + f.departure + " | Arr: " + f.arrival + " | Dur: " + f.duration);
+        }
+        System.out.println("=== End Tables ===\n");
+    }
+
+    private static void proceedToBooking(WebDriver driver, WebDriverWait wait) {
+        // Often after selecting flights, there is a summary CTA
+        try {
+            WebElement continueBtn = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//button[contains(.,'Continue')] | //a[contains(.,'Continue')] | //button[contains(.,'Book')]")));
+            clickViaJS(driver, continueBtn);
+        } catch (Exception e) {
+            System.out.println("Continue/Book CTA not found; attempting generic proceed.");
+            // Fallback: click any visible Book/Continue
+            List<WebElement> ctAs = driver.findElements(By.xpath("//button[contains(.,'Book') or contains(.,'Continue')]"));
+            for (WebElement b : ctAs) {
+                try { clickViaJS(driver, b); break; } catch (Exception ignored) { }
+            }
+        }
+    }
+
+    private static void selectXpressFlexIfPresent(WebDriver driver, WebDriverWait wait) {
+        // Xpress Flex may appear as an upsell card with a toggle/select button
+        try {
+            WebElement flexCard = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("//*[contains(.,'Xpress Flex')]/ancestor::*[self::div or self::section]")));
+            WebElement selectBtn = null;
+            try {
+                selectBtn = flexCard.findElement(By.xpath(".//button[contains(.,'Select')] | .//button[contains(.,'Add')] | .//button[contains(.,'Choose')]"));
+            } catch (Exception ignored) { }
+            if (selectBtn != null) {
+                clickViaJS(driver, selectBtn);
+                System.out.println("Xpress Flex selected.");
+            } else {
+                System.out.println("Xpress Flex area found but no selectable button.");
+            }
+        } catch (Exception e) {
+            System.out.println("Xpress Flex plan not present on this flow.");
+        }
+    }
+
+    private static void handlePriceIncreaseIfPresent(WebDriver driver, WebDriverWait wait) {
+        try {
+            WebElement popup = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("//*[contains(.,'price') and contains(.,'increase')]/ancestor::*[self::div or self::section]")));
+            String text = popup.getText();
+            String amountDigits = text.replaceAll("[^0-9]", "");
+            if (!amountDigits.isEmpty()) {
+                System.out.println("Price increase detected: ₹" + amountDigits);
+            } else {
+                System.out.println("Price increase popup detected but amount not parsed.");
+            }
+            // Confirm/Proceed
+            WebElement proceedBtn = null;
+            try {
+                proceedBtn = popup.findElement(By.xpath(".//button[contains(.,'Continue')] | .//button[contains(.,'Proceed')] | .//button[contains(.,'OK')]"));
+            } catch (Exception ignored) { }
+            if (proceedBtn != null) clickViaJS(driver, proceedBtn);
+        } catch (Exception e) {
+            System.out.println("No price increase popup detected.");
+        }
+    }
+
+    private static void clickViaJS(WebDriver driver, WebElement el) {
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) { }
+    }
+
+    // ---------- Excel writing ----------
+
+    private static void writeCitiesToExcel(List<String> sourceCityTexts, List<String> destinationCityTexts) throws Exception {
+        XSSFWorkbook workbook = new XSSFWorkbook();
+        XSSFSheet sourceSheet = workbook.createSheet("Source Cities");
+        XSSFSheet destinationSheet = workbook.createSheet("Destination Cities");
+
+        writeCityTextToSheet(sourceCityTexts, sourceSheet);
+        writeCityTextToSheet(destinationCityTexts, destinationSheet);
+
+        FileOutputStream out = new FileOutputStream(OUTPUT_PATH);
+        workbook.write(out);
+        out.close();
+        workbook.close();
+        System.out.println("Excel file saved: " + OUTPUT_PATH);
+    }
+
+    private static void writeCityTextToSheet(List<String> cityTexts, XSSFSheet sheet) {
+        // Each suggestion usually looks like: "DEL – New Delhi – Indira Gandhi International Airport"
+        int rowNum = 0;
+        // Header
+        XSSFRow header = sheet.createRow(rowNum++);
+        createCell(header, 0, "City Code");
+        createCell(header, 1, "City");
+        createCell(header, 2, "Airport");
+
+        for (String text : cityTexts) {
+            String[] parts = text.split("–");
+            // Normalize to 3 fields
+            String code = parts.length > 0 ? parts[0].trim() : "";
+            String city = parts.length > 1 ? parts[1].trim() : "";
+            String airport = parts.length > 2 ? parts[2].trim() : "";
+
+            XSSFRow row = sheet.createRow(rowNum++);
+            createCell(row, 0, code);
+            createCell(row, 1, city);
+            createCell(row, 2, airport);
+        }
+
+        // Auto-size columns
+        for (int c = 0; c < 3; c++) {
+            sheet.autoSizeColumn(c);
+        }
+    }
+
+    private static void createCell(XSSFRow row, int index, String value) {
+        XSSFCell cell = row.createCell(index);
+        cell.setCellValue(value);
+    }
+
+    // ---------- Data model ----------
+
+    static class FlightCard {
+        final String airline;
+        final String flightNumber;
+        final String departure;
+        final String arrival;
+        final String duration;
+        final double price;
+        final WebElement bookButton;
+        final WebElement root;
+
+        FlightCard(String airline, String flightNumber, String departure, String arrival, String duration,
+                   double price, WebElement bookButton, WebElement root) {
+            this.airline = airline == null ? "" : airline.trim();
+            this.flightNumber = flightNumber == null ? "" : flightNumber.trim();
+            this.departure = departure == null ? "" : departure.trim();
+            this.arrival = arrival == null ? "" : arrival.trim();
+            this.duration = duration == null ? "" : duration.trim();
+            this.price = price;
+            this.bookButton = bookButton;
+            this.root = root;
+        }
+
+        @Override
+        public String toString() {
+            return "FlightCard{" +
+                    "airline='" + airline + '\'' +
+                    ", flightNumber='" + flightNumber + '\'' +
+                    ", departure='" + departure + '\'' +
+                    ", arrival='" + arrival + '\'' +
+                    ", duration='" + duration + '\'' +
+                    ", price=" + price +
+                    '}';
+        }
+    }
+}

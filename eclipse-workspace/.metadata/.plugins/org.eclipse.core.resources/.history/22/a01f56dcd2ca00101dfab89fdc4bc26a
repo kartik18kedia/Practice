@@ -1,0 +1,47 @@
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+
+import java.io.FileOutputStream;
+import java.time.Duration;
+import java.util.List;
+
+public class MakeMyTripCapstone {
+
+    public static void main(String[] args) throws Exception {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--start-maximized");
+        WebDriver driver = new ChromeDriver(options);
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(20));
+
+        driver.get("https://www.makemytrip.com");
+
+        // Close popup
+        try {
+            driver.findElement(By.cssSelector(".loginModal.displayBlock .close")).click();
+        } catch (Exception e) {
+            System.out.println("Popup not found.");
+        }
+
+        // Handle coachmark overlay
+        try {
+            WebElement coachmark = driver.findElement(By.cssSelector("span.coachmark"));
+            ((JavascriptExecutor) driver).executeScript("arguments[0].style.display='none';", coachmark);
+            Thread.sleep(1000);
+        } catch (Exception e) {
+            System.out.println("Coachmark not found or already hidden.");
+        }
+
+        // Click Round Trip using JS to avoid interception
+        WebElement roundTrip = driver.findElement(By.xpath("//li[@data-cy='roundTrip']"));
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", roundTrip);
+
+        // Select From City: New Delhi
+        driver.findElement(By.id("fromCity")).click();
+        WebElement fromInput = driver

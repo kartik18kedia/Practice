@@ -1,0 +1,56 @@
+package MakemyTrip.MakemyTrip;
+import org.junit.jupiter.api.Test;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+
+import MakemyTrip.pageobjects.BookingPage;
+import MakemyTrip.pageobjects.FlightResultsPage;
+import MakemyTrip.pageobjects.HomePage;
+
+import java.util.List;
+
+public class MakeMyTripTest {
+	@Test
+    public static void Test1() throws Exception {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--start-maximized","--disable-extensions","--disable-popup-blocking","--no-sandbox");
+        WebDriver driver = new ChromeDriver(options);
+
+        HomePage home = new HomePage(driver);
+        FlightResultsPage results = new FlightResultsPage(driver);
+        BookingPage booking = new BookingPage(driver);
+
+        
+        
+        ConfigReader config = new ConfigReader("src/main/resources/config.properties");
+
+        String url = config.getProperty("url");
+        //Using file to read url
+        driver.get(url);
+        home.closeLoginPopup();
+        home.selectRoundTrip();
+        home.selectFromCity("Mumbai");
+        home.selectToCity("New Delhi");
+        home.selectDates(
+            "//*[@id=\"top-banner\"]/div[2]/div/div/div/div/div/div[2]/div[1]/div[3]/div[1]/div/div/div/div[2]/div/div[2]/div[1]/div[3]/div[5]/div[5]/div/p[1]",
+            "//*[@id=\"top-banner\"]/div[2]/div/div/div/div/div/div[2]/div[1]/div[3]/div[1]/div/div/div/div[2]/div/div[2]/div[2]/div[3]/div[4]/div[2]/div"
+        );
+        home.selectTravellersAndClass();
+        home.searchFlights();
+
+        Thread.sleep(8000);
+        List<WebElement> flights = results.getFlights();
+        results.printAirIndiaIndigoFlights(flights);
+        WebElement cheapest = results.selectCheapest(flights);
+        if (cheapest != null) cheapest.findElement(By.xpath(".//button[contains(text(),'Book')]")).click();
+
+        booking.clickContinue();
+        booking.selectXpressFlex();
+        booking.handlePriceIncrease();
+
+        driver.quit();
+    }
+}

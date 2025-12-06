@@ -1,0 +1,98 @@
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+
+import java.io.FileOutputStream;
+import java.time.Duration;
+import java.util.List;
+import java.util.stream.Collectors;
+
+public class MakeMyTripCapstone {
+
+    public static void main(String[] args) throws Exception {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--start-maximized");
+        WebDriver driver = new ChromeDriver(options);
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(20));
+
+        driver.get("https://www.makemytrip.com");
+
+        // Close popup if present
+        try {
+            driver.findElement(By.cssSelector(".loginModal.displayBlock .close")).click();
+        } catch (Exception e) {
+            System.out.println("Popup not found.");
+        }
+
+        // Handle coachmark overlay
+        try {
+            WebElement coachmark = driver.findElement(By.cssSelector("span.coachmark"));
+            ((JavascriptExecutor) driver).executeScript("arguments[0].style.display='none';", coachmark);
+            Thread.sleep(1000);
+        } catch (Exception e) {
+            System.out.println("Coachmark not found or already hidden.");
+        }
+
+        // Click Round Trip using JS to avoid interception
+        WebElement roundTrip = driver.findElement(By.xpath("//li[@data-cy='roundTrip']"));
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", roundTrip);
+
+        // Select From City: New Delhi
+        driver.findElement(By.id("fromCity")).click();
+        WebElement fromInput = driver.findElement(By.xpath("//input[@placeholder='From']"));
+        fromInput.sendKeys("New Delhi");
+        Thread.sleep(2000);
+
+        List<String> sourceCityTexts = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"))
+                .stream().map(WebElement::getText).collect(Collectors.toList());
+
+        // Select To City: Mumbai
+        driver.findElement(By.id("toCity")).click();
+        WebElement toInput = driver.findElement(By.xpath("//input[@placeholder='To']"));
+        toInput.sendKeys("Mumbai");
+        Thread.sleep(2000);
+
+        List<String> destinationCityTexts = driver.findElements(By.cssSelector(".react-autosuggest__suggestions-list li"))
+                .stream().map(WebElement::getText).collect(Collectors.toList());
+
+        // Write to Excel using XSSF only
+        XSSFWorkbook workbook = new XSSFWorkbook();
+        XSSFSheet sourceSheet = workbook.createSheet("Source Cities");
+        XSSFSheet destinationSheet = workbook.createSheet("Destination Cities");
+
+        writeCityTextToSheet(sourceCityTexts, sourceSheet);
+        writeCityTextToSheet(destinationCityTexts, destinationSheet);
+
+        FileOutputStream out = new FileOutputStream("MakeMyTripCities.xlsx");
+        workbook.write(out);
+        out.close();
+        workbook.close();
+        System.out.println("Excel file created: MakeMyTripCities.xlsx");
+
+        // Navigation Timing API
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+        long loadTime = (Long) js.executeScript(
+                "return window.performance.timing.loadEventEnd - window.performance.timing.navigationStart;");
+        System.out.println("Page Load Time: " + loadTime + " ms");
+
+        driver.quit();
+    }
+
+    private static void writeCityTextToSheet(List<String> cityTexts, XSSFSheet sheet) {
+        int rowNum = 0;
+        for (String text : cityTexts) {
+            XSSFRow row = sheet.createRow(rowNum++);
+            String[] parts = text.split("–");
+            for (int i = 0; i < parts.length; i++) {
+                XSSFCell cell = row.createCell(i);
+                cell.setCellValue(parts[i].trim());
+            }
+        }
+    }
+}
